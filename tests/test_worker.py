@@ -189,3 +189,122 @@ def test_unexpected_error_sets_busy_and_propagates() -> None:
     with pytest.raises(RuntimeError):
         make_handler(deps, busy)()
     assert busy.is_set()
+
+
+# --- badge requests: same capture path, different destination ------------------
+
+from prompt_coach.worker import BadgeRequest  # noqa: E402
+
+
+def _run_worker(handler, events_to_send, **callbacks) -> None:
+    events: queue.Queue[HotkeyEvent] = queue.Queue()
+    done = threading.Event()
+    callbacks.setdefault("on_skipped", lambda s: None)
+    original = callbacks.get("on_captured", lambda c: None)
+
+    def on_captured(item) -> None:
+        original(item)
+        done.set()
+
+    callbacks["on_captured"] = on_captured
+    worker = Worker(events, handler, **callbacks)
+    worker.start()
+    for event in events_to_send:
+        events.put(event)
+    assert done.wait(2)
+    worker.stop()
+
+
+def _wait(flag: threading.Event) -> None:
+    assert flag.wait(2)
+
+
+def test_badge_event_goes_to_on_badge_with_the_anchor() -> None:
+    events: queue.Queue[HotkeyEvent] = queue.Queue()
+    got: list[object] = []
+    done = threading.Event()
+    worker = Worker(
+        events,
+        handler=lambda: Captured("hello world", 5),
+        on_captured=got.append,
+        on_skipped=lambda s: None,
+        on_badge=lambda req: (got.append(req), done.set()),
+        anchor=lambda: (1, 2, 3, 4),
+    )
+    worker.start()
+    events.put(HotkeyEvent(at=0.0, kind="badge"))
+    _wait(done)
+    worker.stop()
+    assert got == [BadgeRequest("hello world", 5, (1, 2, 3, 4))]
+
+
+def test_anchor_failure_falls_back_to_none() -> None:
+    events: queue.Queue[HotkeyEvent] = queue.Queue()
+    got: list[BadgeRequest] = []
+    done = threading.Event()
+
+    def broken_anchor():
+        raise RuntimeError("uia exploded")
+
+    worker = Worker(
+        events,
+        handler=lambda: Captured("t", 1),
+        on_captured=lambda c: None,
+        on_skipped=lambda s: None,
+        on_badge=lambda req: (got.append(req), done.set()),
+        anchor=broken_anchor,
+    )
+    worker.start()
+    events.put(HotkeyEvent(at=0.0, kind="badge"))
+    _wait(done)
+    worker.stop()
+    assert got[0].anchor is None
+
+
+def test_badge_skip_is_reported_like_any_other_skip() -> None:
+    events: queue.Queue[HotkeyEvent] = queue.Queue()
+    skips: list[CaptureSkipped] = []
+    done = threading.Event()
+
+    def handler() -> Captured:
+        raise CaptureSkipped(SkipReason.PASSWORD)
+
+    worker = Worker(
+        events,
+        handler=handler,
+        on_captured=lambda c: None,
+        on_skipped=lambda s: (skips.append(s), done.set()),
+        on_badge=lambda req: None,
+    )
+    worker.start()
+    events.put(HotkeyEvent(at=0.0, kind="badge"))
+    _wait(done)
+    worker.stop()
+    assert skips[0].reason is SkipReason.PASSWORD
+
+
+def test_badge_event_without_a_badge_handler_is_ignored_entirely() -> None:
+    """No on_badge means no handler call: no keys are sent for a press we can't use."""
+    calls: list[int] = []
+
+    def handler() -> Captured:
+        calls.append(1)
+        return Captured("x", 1)
+
+    _run_worker(
+        handler,
+        [HotkeyEvent(at=0.0, kind="badge"), HotkeyEvent(at=1.0)],
+        on_captured=lambda c: None,
+    )
+    assert calls == [1]  # only the rewrite press captured
+
+
+def test_rewrite_events_never_reach_on_badge() -> None:
+    badges: list[object] = []
+    _run_worker(
+        lambda: Captured("x", 1),
+        [HotkeyEvent(at=0.0)],
+        on_captured=lambda c: None,
+        on_badge=badges.append,
+    )
+    assert badges == []

@@ -104,6 +104,46 @@ def _uia_probe() -> bool:
         return bool(control is not None and control.GetPropertyValue(30019))
 
 
+# --- where is the input? (to place the badge next to it) ----------------------
+
+# Left, top, right, bottom in physical screen pixels (what UIA and Win32 use).
+Rect = tuple[int, int, int, int]
+
+
+def _uia_rect() -> Rect | None:
+    """Ask UI Automation for the focused control's on-screen rectangle."""
+    import uiautomation as auto  # lazy, like _uia_probe
+
+    with auto.UIAutomationInitializerInThread():
+        control = auto.GetFocusedControl()
+        if control is None:
+            return None
+        r = control.BoundingRectangle
+        return (int(r.left), int(r.top), int(r.right), int(r.bottom))
+
+
+def focused_input_rect(
+    probe: Callable[[], Rect | None] = _uia_rect, timeout: float = 1.0
+) -> Rect | None:
+    """The focused input's rectangle, or None if unknown, empty or too slow.
+
+    Like ``password_state``, nothing depends on this: the badge just falls back
+    to the mouse position.
+    """
+    pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = pool.submit(probe)
+    try:
+        rect = future.result(timeout=timeout)
+    except Exception:  # includes TimeoutError and any UIA/COM failure
+        return None
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)
+    if rect is None:
+        return None
+    left, top, right, bottom = rect
+    return rect if right > left and bottom > top else None
+
+
 def password_state(
     probe: Callable[[], bool] = _uia_probe, timeout: float = 1.0
 ) -> bool | None:

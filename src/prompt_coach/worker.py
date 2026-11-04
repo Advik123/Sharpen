@@ -16,7 +16,8 @@ from enum import Enum
 from typing import Callable
 
 from prompt_coach import clipboard, focus
-from prompt_coach.hotkey import HotkeyEvent
+from prompt_coach.focus import Rect
+from prompt_coach.hotkey import KIND_BADGE, HotkeyEvent
 
 
 class SkipReason(Enum):
@@ -44,6 +45,15 @@ class Captured:
 
     text: str
     hwnd: int
+
+
+@dataclass(frozen=True)
+class BadgeRequest:
+    """Captured text for the badge, plus where the input is on screen (or None)."""
+
+    text: str
+    hwnd: int
+    anchor: Rect | None
 
 
 @dataclass(frozen=True)
@@ -123,14 +133,27 @@ class Worker(threading.Thread):
         on_captured: Callable[[Captured], None],
         on_skipped: Callable[[CaptureSkipped], None],
         on_error: Callable[[Exception], None] | None = None,
+        on_badge: Callable[[BadgeRequest], None] | None = None,
+        anchor: Callable[[], Rect | None] | None = None,
     ) -> None:
         super().__init__(name="prompt-coach-worker", daemon=True)
         self._events = events
         self._handler = handler
+        self._on_badge = on_badge
+        self._anchor = anchor
         self._on_captured = on_captured
         self._on_skipped = on_skipped
         self._on_error = on_error or (lambda exc: None)
         self._stop_flag = threading.Event()
+
+    def _find_anchor(self) -> Rect | None:
+        """Where the input is, or None. Never raises: the badge can use the mouse."""
+        if self._anchor is None:
+            return None
+        try:
+            return self._anchor()
+        except Exception:
+            return None
 
     def stop(self) -> None:
         """Ask the thread to exit after its current item."""
@@ -139,11 +162,18 @@ class Worker(threading.Thread):
     def run(self) -> None:
         while not self._stop_flag.is_set():
             try:
-                self._events.get(timeout=0.1)
+                event = self._events.get(timeout=0.1)
             except queue.Empty:
                 continue
+            is_badge = event.kind == KIND_BADGE
+            if is_badge and self._on_badge is None:
+                continue  # nobody can use it, so don't send keys into the user's app
             try:
-                self._on_captured(self._handler())
+                captured = self._handler()
+                if is_badge:
+                    self._on_badge(BadgeRequest(captured.text, captured.hwnd, self._find_anchor()))
+                else:
+                    self._on_captured(captured)
             except CaptureSkipped as skip:
                 self._on_skipped(skip)
             except Exception as exc:  # never let one bad press kill the worker

@@ -51,3 +51,21 @@ def test_bad_hotkeys_raise(combo: str) -> None:
 def test_listener_rejects_bad_hotkey_before_starting() -> None:
     with pytest.raises(HotkeyError):
         HotkeyListener("nonsense", queue.Queue())
+
+
+# --- the badge hotkey shares the queue but is tagged ----------------------------
+
+def test_events_default_to_the_rewrite_kind() -> None:
+    q: queue.Queue[HotkeyEvent] = queue.Queue()
+    make_callback(q)()
+    assert q.get_nowait().kind == "rewrite"
+
+
+def test_events_carry_the_kind_of_their_hotkey() -> None:
+    q: queue.Queue[HotkeyEvent] = queue.Queue()
+    make_callback(q, kind="badge")()
+    assert q.get_nowait().kind == "badge"
+
+
+def test_listener_accepts_a_kind() -> None:
+    HotkeyListener("<ctrl>+<alt>+b", queue.Queue(), kind="badge")  # not started

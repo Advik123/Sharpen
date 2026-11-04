@@ -14,6 +14,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QCursor, QGuiApplication, QKeyEvent
 from PySide6.QtWidgets import (
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+
+from prompt_coach.ui import theme
 
 WINDOW_SIZE = (780, 470)
 MAX_QUESTIONS = 3
@@ -50,28 +53,34 @@ class PreviewWindow(QWidget):
         self._state = "idle"
         self.setObjectName("preview")
         self.resize(*WINDOW_SIZE)
-        self.setStyleSheet(
-            "#preview { background: #1f2330; border: 1px solid #4a5170; }"
-            "QLabel { color: #e6e9f2; }"
-            "QPlainTextEdit { background: #151824; color: #e6e9f2; border: 1px solid #343a52;"
-            " font-family: Consolas, monospace; font-size: 10pt; }"
-            "QPushButton { padding: 6px 14px; }"
-        )
+        # Rounded corners need a see-through window; the stylesheet paints the rest.
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+        self.setStyleSheet(theme.preview_qss())
 
+        # The status line is a full-width violet band (pink when something went wrong).
         self.status_label = QLabel()
+        self.status_label.setObjectName("status")
+        self.status_label.setProperty("tone", "normal")
         self.status_label.setWordWrap(True)
+        self.accent_line = QFrame()
+        self.accent_line.setObjectName("accent")
+        self.accent_line.setFixedHeight(3)
         self.progress = QProgressBar()
         self.progress.setRange(0, 0)  # indeterminate spinner
         self.progress.setTextVisible(False)
-        self.progress.setMaximumHeight(8)
+        self.progress.setFixedHeight(8)
 
         self.original_view = _text_view()
         self.rewrite_view = _text_view()
+        self.rewrite_view.setObjectName("rewriteView")  # pink border: the one you act on
         columns = QHBoxLayout()
-        columns.addLayout(self._column("Original", self.original_view))
-        columns.addLayout(self._column("Rewrite", self.rewrite_view))
+        columns.setSpacing(14)
+        columns.addLayout(self._column("ORIGINAL", self.original_view))
+        columns.addLayout(self._column("REWRITE", self.rewrite_view))
 
         self.notes_label = QLabel()
+        self.notes_label.setObjectName("notes")
         self.notes_label.setWordWrap(True)
 
         # One label + answer box per question the model asked (rebuilt per result).
@@ -88,6 +97,15 @@ class PreviewWindow(QWidget):
         self.copy_button = QPushButton("Copy only")
         self.reject_button = QPushButton("Reject")
         self.cancel_button = QPushButton("Cancel")
+        # Visual roles: violet = the action you came for, pink = secondary, outline = back out.
+        for button, role in (
+            (self.accept_button, "primary"),
+            (self.copy_button, "accent"),
+            (self.answer_button, "accent"),
+            (self.reject_button, "ghost"),
+            (self.cancel_button, "ghost"),
+        ):
+            button.setProperty("role", role)
         self.accept_button.clicked.connect(lambda: self.accepted.emit(self.rewrite_view.toPlainText()))
         self.copy_button.clicked.connect(lambda: self.copy_only.emit(self.rewrite_view.toPlainText()))
         self.reject_button.clicked.connect(self.rejected.emit)
@@ -104,20 +122,44 @@ class PreviewWindow(QWidget):
         ):
             buttons.addWidget(button)
 
-        layout = QVBoxLayout(self)
+        body = QVBoxLayout()
+        body.setContentsMargins(18, 14, 18, 16)
+        body.setSpacing(10)
+        body.addWidget(self.progress)
+        body.addLayout(columns, 1)
+        body.addWidget(self.notes_label)
+        body.addWidget(self.questions_box)
+        body.addLayout(buttons)
+
+        # A translucent top-level window cannot paint its own rounded background, so a
+        # "surface" frame inside it carries the colour, border and corners.
+        self.surface = QFrame()
+        self.surface.setObjectName("surface")
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.addWidget(self.surface)
+
+        layout = QVBoxLayout(self.surface)
+        layout.setContentsMargins(2, 2, 2, 2)  # inside the 2px border
+        layout.setSpacing(0)
         layout.addWidget(self.status_label)
-        layout.addWidget(self.progress)
-        layout.addLayout(columns, 1)
-        layout.addWidget(self.notes_label)
-        layout.addWidget(self.questions_box)
-        layout.addLayout(buttons)
+        layout.addWidget(self.accent_line)
+        layout.addLayout(body, 1)
 
     @staticmethod
     def _column(title: str, view: QPlainTextEdit) -> QVBoxLayout:
         column = QVBoxLayout()
-        column.addWidget(QLabel(title))
+        column.setSpacing(6)
+        heading = QLabel(title)
+        heading.setObjectName("columnTitle")
+        column.addWidget(heading)
         column.addWidget(view, 1)
         return column
+
+    def _set_tone(self, tone: str) -> None:
+        """Status band colour: "normal" (violet) or "alert" (bubblegum pink)."""
+        self.status_label.setProperty("tone", tone)
+        theme.repolish(self.status_label)
 
     # --- states ---------------------------------------------------------------
 
@@ -128,6 +170,7 @@ class PreviewWindow(QWidget):
         self.rewrite_view.clear()
         self.notes_label.clear()
         self._set_questions(())
+        self._set_tone("normal")
         self.status_label.setText("Rewriting with the local model...")
         self._set_visible(progress=True, cancel=True)
         self._ensure_visible()
@@ -149,6 +192,7 @@ class PreviewWindow(QWidget):
             if questions
             else "Review the rewrite. Esc rejects."
         )
+        self._set_tone("normal")
         self.status_label.setText(notice or default)
         self.notes_label.setText(self._notes(changes))
         self._set_questions(questions[:MAX_QUESTIONS])
@@ -160,6 +204,7 @@ class PreviewWindow(QWidget):
     def show_error(self, message: str) -> None:
         """Show a message with a Close button."""
         self._state = "error"
+        self._set_tone("alert")
         self.status_label.setText(message)
         self.notes_label.clear()
         self._set_questions(())

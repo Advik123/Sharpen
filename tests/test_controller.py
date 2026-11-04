@@ -8,9 +8,10 @@ import pytest
 
 from prompt_coach.controller import Controller, ControllerDeps
 from prompt_coach.llm.base import OllamaDown, RewriteResult
+from prompt_coach.checker import Issue
 from prompt_coach.log import LogEntry
 from prompt_coach.ui.preview import PreviewWindow
-from prompt_coach.worker import Captured, CaptureSkipped, SkipReason
+from prompt_coach.worker import BadgeRequest, Captured, CaptureSkipped, SkipReason
 
 ORIGINAL_HWND = 7
 
@@ -44,6 +45,15 @@ class Recorder:
     copied: list[str] = field(default_factory=list)
     toasts: list[str] = field(default_factory=list)
     entries: list[LogEntry] = field(default_factory=list)
+    checked: list[str] = field(default_factory=list)
+    badges: list[tuple] = field(default_factory=list)
+    check_error: Exception | None = None
+
+    def check(self, text: str) -> tuple[Issue, ...]:
+        self.checked.append(text)
+        if self.check_error:
+            raise self.check_error
+        return (Issue("R1", "no_done_when", "no Done-when"),)
 
     def refocus(self, hwnd: int) -> bool:
         if self.refocus_ok:
@@ -67,6 +77,8 @@ def setup(qtbot):
         sleep=lambda s: None,
         notify=rec.toasts.append,
         log=rec.entries.append,
+        check=rec.check,
+        show_badge=lambda issues, anchor: rec.badges.append((issues, anchor)),
     )
     controller = Controller(preview, rewriter, deps, busy)
     busy.set()  # the worker sets this when a capture succeeds
@@ -393,3 +405,33 @@ def test_every_skip_reason_except_busy_has_a_human_message() -> None:
 
     missing = [r for r in SkipReason if r is not SkipReason.BUSY and r not in _SKIP_MESSAGES]
     assert missing == []
+
+
+# --- the on-demand badge ---------------------------------------------------------
+
+def test_badge_request_runs_the_checker_and_shows_the_badge(qtbot, setup) -> None:
+    controller, preview, rec, _, busy = setup
+    controller.badge_in.emit(BadgeRequest("fix it", ORIGINAL_HWND, (1, 2, 3, 4)))
+    qtbot.waitUntil(lambda: len(rec.badges) == 1, timeout=10000)
+    assert rec.checked == ["fix it"]
+    issues, anchor = rec.badges[0]
+    assert [i.name for i in issues] == ["no_done_when"]
+    assert anchor == (1, 2, 3, 4)
+
+
+def test_badge_releases_busy_and_never_opens_the_preview(qtbot, setup) -> None:
+    controller, preview, rec, _, busy = setup
+    controller.badge_in.emit(BadgeRequest("fix it", ORIGINAL_HWND, None))
+    qtbot.waitUntil(lambda: len(rec.badges) == 1, timeout=10000)
+    assert not busy.is_set()  # the badge takes no focus, so the next press is safe
+    assert preview.isHidden()
+    assert rec.entries == [] and rec.pasted == [] and rec.copied == []
+
+
+def test_a_checker_failure_becomes_a_toast_and_releases_busy(qtbot, setup) -> None:
+    controller, preview, rec, _, busy = setup
+    rec.check_error = RuntimeError("bad rule")
+    controller.badge_in.emit(BadgeRequest("fix it", ORIGINAL_HWND, None))
+    qtbot.waitUntil(lambda: any("bad rule" in t for t in rec.toasts), timeout=10000)
+    assert rec.badges == []
+    assert not busy.is_set()

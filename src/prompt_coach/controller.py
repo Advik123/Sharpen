@@ -18,12 +18,14 @@ from typing import Callable
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
+from prompt_coach.checker import Issue
+from prompt_coach.focus import Rect
 from prompt_coach.focus_guard import FocusGuard
 from prompt_coach.llm.base import LLMError, Rewriter, RewriteResult
 from prompt_coach.llm.postprocess import build_answered_text
 from prompt_coach.log import LogEntry
 from prompt_coach.ui.preview import PreviewWindow
-from prompt_coach.worker import Captured, CaptureSkipped, SkipReason
+from prompt_coach.worker import BadgeRequest, Captured, CaptureSkipped, SkipReason
 
 FOCUS_MESSAGE = "Focus changed: Accept is off so nothing is pasted into the wrong window. Copy is still available."
 PASTE_FOCUS_MESSAGE = "Focus changed: nothing was pasted. Copy is still available."
@@ -50,6 +52,14 @@ def _no_log(entry: LogEntry) -> None:
     return None
 
 
+def _no_check(text: str) -> tuple[Issue, ...]:
+    return ()
+
+
+def _no_badge(issues: tuple[Issue, ...], anchor: Rect | None) -> None:
+    return None
+
+
 @dataclass(frozen=True)
 class ControllerDeps:
     """Everything that touches Windows, injectable for tests."""
@@ -63,6 +73,8 @@ class ControllerDeps:
     on_timing: Callable[[float], None] = _no_timing
     notify: Callable[[str], None] = _no_notify  # show an error toast
     log: Callable[[LogEntry], None] = _no_log  # append to the JSONL log
+    check: Callable[[str], tuple[Issue, ...]] = _no_check  # the local rule checker
+    show_badge: Callable[[tuple[Issue, ...], Rect | None], None] = _no_badge
 
 
 class Controller(QObject):
@@ -72,6 +84,7 @@ class Controller(QObject):
     captured_in = Signal(object)  # Captured
     skipped_in = Signal(object)  # CaptureSkipped
     error_in = Signal(object)  # Exception
+    badge_in = Signal(object)  # BadgeRequest
 
     # Internal: our own helper threads report back with these.
     _rewrite_done = Signal(int, object)  # generation, RewriteResult
@@ -105,6 +118,7 @@ class Controller(QObject):
         self.captured_in.connect(self._on_captured)
         self.skipped_in.connect(self._on_skipped)
         self.error_in.connect(self._on_error)
+        self.badge_in.connect(self._on_badge)
         self._rewrite_done.connect(self._on_rewrite_done)
         self._rewrite_failed.connect(self._on_rewrite_failed)
         self._paste_done.connect(self._on_paste_done)
@@ -144,6 +158,20 @@ class Controller(QObject):
         self._gen += 1
         message = f"Unexpected error: {exc}"
         self._fail(message, LogEntry("error", detail=message))
+
+    def _on_badge(self, request: BadgeRequest) -> None:
+        """Run the local checks and show the badge. No model, no preview, no log.
+
+        The badge never takes focus, so ``busy`` is released at once and the next
+        hotkey press (of either kind) works immediately.
+        """
+        try:
+            issues = self._deps.check(request.text)
+            self._deps.show_badge(issues, request.anchor)
+        except Exception as exc:
+            self._fail(f"Check failed: {exc}", LogEntry("error", detail=f"Check failed: {exc}"))
+            return
+        self._busy.clear()
 
     def _fail(self, message: str, entry: LogEntry) -> None:
         """Toast + log, then release the session so the next hotkey press works."""

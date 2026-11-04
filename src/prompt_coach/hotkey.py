@@ -18,11 +18,19 @@ class HotkeyError(Exception):
     """Raised for an invalid hotkey string."""
 
 
+KIND_REWRITE = "rewrite"
+KIND_BADGE = "badge"
+
+
 @dataclass(frozen=True)
 class HotkeyEvent:
-    """One press of the hotkey. ``at`` is a ``time.perf_counter()`` stamp."""
+    """One press of a hotkey. ``at`` is a ``time.perf_counter()`` stamp.
+
+    ``kind`` says which hotkey it was: the rewrite hotkey or the badge hotkey.
+    """
 
     at: float
+    kind: str = KIND_REWRITE
 
 
 def validate_hotkey(combo: str) -> None:
@@ -35,12 +43,14 @@ def validate_hotkey(combo: str) -> None:
         raise HotkeyError("hotkey is empty")
 
 
-def make_callback(events: "queue.Queue[HotkeyEvent]") -> Callable[[], None]:
+def make_callback(
+    events: "queue.Queue[HotkeyEvent]", kind: str = KIND_REWRITE
+) -> Callable[[], None]:
     """Build the pynput callback: enqueue one event, never block, never raise."""
 
     def on_hotkey() -> None:
         try:
-            events.put_nowait(HotkeyEvent(at=time.perf_counter()))
+            events.put_nowait(HotkeyEvent(at=time.perf_counter(), kind=kind))
         except queue.Full:
             # A press is already waiting; dropping a duplicate is the safe choice.
             pass
@@ -51,10 +61,12 @@ def make_callback(events: "queue.Queue[HotkeyEvent]") -> Callable[[], None]:
 class HotkeyListener:
     """Owns a pynput ``GlobalHotKeys`` thread for a single combo."""
 
-    def __init__(self, combo: str, events: "queue.Queue[HotkeyEvent]") -> None:
+    def __init__(
+        self, combo: str, events: "queue.Queue[HotkeyEvent]", kind: str = KIND_REWRITE
+    ) -> None:
         validate_hotkey(combo)
         self._combo = combo
-        self._listener = keyboard.GlobalHotKeys({combo: make_callback(events)})
+        self._listener = keyboard.GlobalHotKeys({combo: make_callback(events, kind)})
 
     def start(self) -> None:
         """Start listening on a background thread."""

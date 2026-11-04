@@ -16,15 +16,18 @@ from PySide6.QtWidgets import QApplication
 from prompt_coach import clipboard, focus
 from prompt_coach.config import ConfigError, load_config
 from prompt_coach.controller import Controller, ControllerDeps
-from prompt_coach.hotkey import HotkeyError, HotkeyEvent, HotkeyListener
+from prompt_coach.checker import RulesError, check, load_rules
+from prompt_coach.hotkey import KIND_BADGE, HotkeyError, HotkeyEvent, HotkeyListener
 from prompt_coach.llm.ollama import OllamaClient, load_system_prompt
 from prompt_coach.log import SessionLog, default_log_path
+from prompt_coach.ui.badge import Badge
 from prompt_coach.ui.preview import PreviewWindow
 from prompt_coach.ui.toast import Toast
 from prompt_coach.worker import Worker, make_handler, real_deps
 
 ROOT = Path(__file__).resolve().parents[2]
 CONFIG_PATH = ROOT / "config" / "config.toml"
+RULES_PATH = ROOT / "config" / "rules.yaml"
 
 
 def _report_timing(seconds: float) -> None:
@@ -40,8 +43,10 @@ def main() -> int:
         cfg = load_config(CONFIG_PATH)
         events: "queue.Queue[HotkeyEvent]" = queue.Queue(maxsize=8)
         listener = HotkeyListener(cfg.hotkey, events)
+        badge_listener = HotkeyListener(cfg.badge_hotkey, events, kind=KIND_BADGE)
         system_prompt = load_system_prompt()
-    except (ConfigError, HotkeyError, FileNotFoundError) as exc:
+        rules = load_rules(RULES_PATH)
+    except (ConfigError, HotkeyError, FileNotFoundError, RulesError) as exc:
         print(f"Startup error: {exc}", file=sys.stderr)
         return 1
 
@@ -59,6 +64,7 @@ def main() -> int:
 
     preview = PreviewWindow()
     toast = Toast()
+    badge = Badge()
     session_log = SessionLog(default_log_path())
     busy = threading.Event()
     controller = Controller(
@@ -73,6 +79,8 @@ def main() -> int:
             on_timing=_report_timing,
             notify=toast.show_message,
             log=session_log.append,
+            check=lambda text: check(text, rules),
+            show_badge=badge.show_issues,
         ),
         busy,
     )
@@ -83,10 +91,15 @@ def main() -> int:
         on_captured=controller.captured_in.emit,
         on_skipped=controller.skipped_in.emit,
         on_error=controller.error_in.emit,
+        on_badge=controller.badge_in.emit,
+        # "input": ask UI Automation where the text box is; otherwise use the mouse.
+        anchor=focus.focused_input_rect if cfg.badge_anchor == "input" else None,
     )
     worker.start()
     listener.start()
+    badge_listener.start()
     print(f"Listening for {cfg.hotkey}. Press Ctrl+C in this console to quit.", flush=True)
+    print(f"Issue badge: {cfg.badge_hotkey} (anchor: {cfg.badge_anchor})", flush=True)
     print(
         f"Log: {session_log.path}  (clear it: python -m prompt_coach.log --clear)",
         flush=True,
@@ -100,6 +113,7 @@ def main() -> int:
         return app.exec()
     finally:
         listener.stop()
+        badge_listener.stop()
         worker.stop()
         rewriter.close()
 

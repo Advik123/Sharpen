@@ -13,5 +13,5 @@ timeout_s = 30
 size_cap = 20000
 
 # Where the badge appears: "input" (UIA) or "mouse". Set after the Day 0 gate.
-badge_anchor = "mouse"
-badge_hotkey = "<ctrl>+<alt>+b"
+badge_anchor = "input"
+badge_hotkey = "<ctrl>+<cmd>+<alt>+c"  # <cmd> is the Windows key in pynput

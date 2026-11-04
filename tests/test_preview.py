@@ -186,3 +186,69 @@ def test_escape_still_rejects_while_typing_an_answer(win: PreviewWindow, qtbot) 
     win.answer_edits[0].setFocus()
     with qtbot.waitSignal(win.rejected):
         QTest.keyClick(win.answer_edits[0], Qt.Key_Escape)
+
+
+# --- marshmallow / galactic violet / bubblegum redesign --------------------------
+
+import re as _re  # noqa: E402
+
+from prompt_coach.ui import theme as _theme  # noqa: E402
+
+
+def test_status_band_tone_is_alert_only_in_the_error_state(qtbot) -> None:
+    window = PreviewWindow()
+    qtbot.addWidget(window)
+    window.show_error("Cannot reach Ollama.")
+    assert window.status_label.property("tone") == "alert"
+    window.show_result("a", "b")
+    assert window.status_label.property("tone") == "normal"
+    window.show_loading("a")
+    assert window.status_label.property("tone") == "normal"
+
+
+def test_buttons_carry_their_visual_role(qtbot) -> None:
+    window = PreviewWindow()
+    qtbot.addWidget(window)
+    assert window.accept_button.property("role") == "primary"
+    assert window.copy_button.property("role") == "accent"
+    assert window.answer_button.property("role") == "accent"
+    assert window.reject_button.property("role") == "ghost"
+    assert window.cancel_button.property("role") == "ghost"
+
+
+def test_window_paints_its_styled_rounded_background(qtbot) -> None:
+    window = PreviewWindow()
+    qtbot.addWidget(window)
+    assert window.testAttribute(Qt.WidgetAttribute.WA_StyledBackground)
+    assert window.testAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+
+
+def test_preview_uses_only_palette_colours(qtbot) -> None:
+    window = PreviewWindow()
+    qtbot.addWidget(window)
+    used = {c.lower() for c in _re.findall(r"#[0-9a-fA-F]{6}", window.styleSheet())}
+    assert used and used <= set(_theme.PALETTE.values())
+
+
+def _pixel(window, x: int, y: int) -> tuple[str, int]:
+    color = window.grab().toImage().pixelColor(x, y)
+    return color.name(), color.alpha()
+
+
+def test_window_really_paints_marshmallow_with_a_violet_border(qtbot) -> None:
+    """Regression: a translucent top-level window paints nothing by itself."""
+    window = PreviewWindow()
+    qtbot.addWidget(window)
+    window.show_result("a", "b")
+    assert _pixel(window, 389, 200) == (_theme.MARSHMALLOW, 255)  # gutter between columns
+    assert _pixel(window, 1, 235) == (_theme.VIOLET, 255)  # the 2px border
+    assert _pixel(window, 0, 0)[1] == 0  # rounded corner: see-through
+
+
+def test_status_band_is_violet_normally_and_bubblegum_for_errors(qtbot) -> None:
+    window = PreviewWindow()
+    qtbot.addWidget(window)
+    window.show_result("a", "b")
+    assert _pixel(window, 740, 20) == (_theme.VIOLET, 255)
+    window.show_error("Cannot reach Ollama.")
+    assert _pixel(window, 740, 20) == (_theme.BUBBLEGUM, 255)

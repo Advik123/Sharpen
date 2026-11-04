@@ -96,3 +96,38 @@ def test_refocus_survives_a_windows_error(monkeypatch: pytest.MonkeyPatch) -> No
         raise OSError("access denied")
 
     assert focus.refocus(5, attempts=2, set_foreground=refuse, sleep=lambda s: None) is False
+
+
+# --- where is the focused input? (for placing the badge) ------------------------
+
+import time as _time  # noqa: E402
+
+from prompt_coach.focus import focused_input_rect  # noqa: E402
+
+
+def test_rect_comes_from_the_probe() -> None:
+    assert focused_input_rect(probe=lambda: (10, 20, 300, 60)) == (10, 20, 300, 60)
+
+
+def test_unknown_rect_is_none() -> None:
+    assert focused_input_rect(probe=lambda: None) is None
+
+
+def test_probe_error_is_none() -> None:
+    def boom():
+        raise RuntimeError("uia")
+
+    assert focused_input_rect(probe=boom) is None
+
+
+def test_slow_probe_times_out_to_none() -> None:
+    def slow():
+        _time.sleep(0.3)
+        return (1, 2, 3, 4)
+
+    assert focused_input_rect(probe=slow, timeout=0.05) is None
+
+
+@pytest.mark.parametrize("rect", [(0, 0, 0, 0), (10, 10, 10, 50), (50, 10, 20, 50), (10, 50, 40, 20)])
+def test_empty_or_inverted_rects_are_rejected(rect) -> None:
+    assert focused_input_rect(probe=lambda: rect) is None

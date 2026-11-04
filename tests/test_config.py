@@ -54,3 +54,12 @@ def test_config_is_immutable() -> None:
 def test_shipped_config_loads() -> None:
     shipped = Path(__file__).parents[1] / "config" / "config.toml"
     assert load_config(shipped) == Config()
+
+
+def test_badge_hotkey_must_differ_from_the_rewrite_hotkey(tmp_path) -> None:
+    from prompt_coach.config import ConfigError, load_config
+
+    path = tmp_path / "c.toml"
+    path.write_text('hotkey = "<ctrl>+<alt>+b"\nbadge_hotkey = "<ctrl>+<alt>+b"\n', encoding="utf-8")
+    with pytest.raises(ConfigError):
+        load_config(path)

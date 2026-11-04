@@ -27,8 +27,8 @@ class Config:
     ollama_url: str = "http://localhost:11434"
     timeout_s: int = 30
     size_cap: int = 20000
-    badge_anchor: str = "mouse"
-    badge_hotkey: str = "<ctrl>+<alt>+b"
+    badge_anchor: str = "input"  # Day 0 gate: UIA works in Cursor and Claude desktop
+    badge_hotkey: str = "<ctrl>+<cmd>+<alt>+c"
 
 
 def load_config(path: Path) -> Config:
@@ -57,6 +57,8 @@ def load_config(path: Path) -> Config:
     cfg = Config(**raw)
     if cfg.badge_anchor not in _BADGE_ANCHORS:
         raise ConfigError(f"badge_anchor must be one of {_BADGE_ANCHORS}, got {cfg.badge_anchor!r}")
+    if cfg.badge_hotkey == cfg.hotkey:
+        raise ConfigError("hotkey and badge_hotkey must be different")
     if cfg.timeout_s <= 0 or cfg.size_cap <= 0:
         raise ConfigError("timeout_s and size_cap must be positive")
     return cfg
