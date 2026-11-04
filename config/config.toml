@@ -1,0 +1,17 @@
+# Prompt Coach settings. Every key is optional; defaults live in config.py.
+
+# Global hotkey in pynput syntax. Special keys need angle brackets,
+# e.g. "<ctrl>+<alt>+<space>" (plain letters such as "k" do not).
+hotkey = "<ctrl>+<alt>+<space>"
+
+# Ollama
+model = "qwen2.5:3b"
+ollama_url = "http://localhost:11434"
+timeout_s = 30
+
+# Text longer than this (characters) is refused with a toast.
+size_cap = 20000
+
+# Where the badge appears: "input" (UIA) or "mouse". Set after the Day 0 gate.
+badge_anchor = "mouse"
+badge_hotkey = "<ctrl>+<alt>+b"

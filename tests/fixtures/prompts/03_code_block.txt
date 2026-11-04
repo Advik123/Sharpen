@@ -1,0 +1,13 @@
+this function is slow, make it faster
+
+```python
+def find_dupes(items):
+    out = []
+    for a in items:
+        for b in items:
+            if a is not b and a == b and a not in out:
+                out.append(a)
+    return out
+```
+
+keep the same return type

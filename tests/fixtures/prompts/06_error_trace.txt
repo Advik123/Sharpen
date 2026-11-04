@@ -1,0 +1,9 @@
+getting this error when i run npm test, why
+
+```
+TypeError: Cannot read properties of undefined (reading 'map')
+    at renderList (src/components/UserList.jsx:14:22)
+    at App (src/App.jsx:30:5)
+```
+
+only started after i changed api/users.js

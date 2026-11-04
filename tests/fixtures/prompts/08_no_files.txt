@@ -1,0 +1,1 @@
+i want a landing page for my freelance web dev business. it should look clean, have a contact form and show 3 past projects. no frameworks, just html css and a little js

@@ -1,0 +1,10 @@
+refactor this to use async/await instead of promises, behavior must stay the same
+
+```js
+function load(id) {
+  return fetch(`/api/items/${id}`)
+    .then(r => r.json())
+    .then(d => d.name)
+    .catch(() => null);
+}
+```

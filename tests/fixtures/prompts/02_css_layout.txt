@@ -1,0 +1,1 @@
+the navbar in styles/nav.css breaks on mobile, the links overflow. make it a hamburger menu under 600px and keep the desktop look the same
