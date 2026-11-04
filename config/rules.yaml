@@ -1,0 +1,90 @@
+# Local prompt checks (no model, no tokens). Edit freely; tests/test_checker.py
+# validates this file, and tests/fixtures/rules/cases.yaml must have a pass and a
+# fail example for every rule here.
+#
+# kind: absent   -> issue when NONE of the patterns match   ("no Done-when line")
+# kind: present  -> issue when ANY pattern matches          ("vague verb")
+# kind: min_words-> issue when the text has fewer than min_words words
+# enabled:   false turns a rule off (default true)
+# scan_code: true lets patterns look inside ``` code blocks too (default false)
+# Patterns are case-insensitive regular expressions; use single quotes in YAML.
+
+rules:
+  - id: R1
+    name: no_done_when
+    label: "no Done-when"
+    kind: absent
+    patterns:
+      - '\bdone when\b'
+      - '\bdone if\b'
+      - '\bacceptance\b'
+      - '\bshould pass\b'
+      - '\bsuccess (?:criteria|when)\b'
+      - '\btests? (?:should |must )?pass'
+      - '\bmust (?:pass|work|return)\b'
+
+  - id: R2
+    name: no_target
+    label: "no file named"
+    kind: absent
+    scan_code: true
+    patterns:
+      - '[\w.-]+[/\\][\w./\\-]+'                              # a path
+      - '\b[\w-]+\.(?!(?:e|g)\b)[A-Za-z][A-Za-z0-9]{0,4}\b'   # a file name (not "e.g")
+      - 'https?://\S+'                                         # a URL
+      - '`[^`\n]+`'                                            # `an_identifier`
+      - '\b\w+\(\)'                                            # a call like parse()
+
+  - id: R3
+    name: too_short
+    label: "too short"
+    kind: min_words
+    min_words: 15
+
+  - id: R4
+    name: vague_verb
+    label: "vague verb"
+    kind: present
+    patterns:
+      - '\bfix (?:it|this|that)\b'
+      - '\bmake (?:it|this|that) (?:better|nicer|good|cleaner)\b'
+      - '\bimprove (?:it|this|that)\b'
+      # "clean up" is fine when a file name follows within a few words
+      - '\bclean (?:it )?up\b(?!\s+(?:\S+\s+){0,4}?[\w./\\-]+\.\w{1,5}\b)'
+
+  - id: R5
+    name: no_dont
+    label: "no Don't line"
+    kind: absent
+    patterns:
+      - '\bdon[^\w\s]?t\b'
+      - '\bdo not\b'
+      - '\bavoid\b'
+      - '\bnever\b'
+
+  - id: R6
+    name: multi_task
+    label: "several tasks"
+    kind: present
+    patterns:
+      - '\band also\b'
+      - ',\s*also (?:add|fix|make|update|create|write|refactor|remove|change)\b'
+      - '(?ms)^\s*1[.)]\s.*^\s*2[.)]\s'                      # a numbered list of 2+ items
+
+  # Optional rules: off by default because they are noisy for short prompts.
+  - id: R7
+    name: no_output_format
+    label: "no output format"
+    kind: absent
+    enabled: false
+    patterns:
+      - '\b(?:diff|patch|list|table|json|yaml|csv|bullets?|markdown|summary|code block|format|step[- ]by[- ]step)\b'
+
+  - id: R8
+    name: no_context
+    label: "no context"
+    kind: absent
+    enabled: false
+    patterns:
+      - '\b(?:because|so that|in order to|since|context|background|currently|right now|we are|i am|my goal|the reason)\b'
+      - '\bi[^\w\s]m\b'

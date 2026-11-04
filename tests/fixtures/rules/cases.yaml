@@ -1,0 +1,74 @@
+# One or more PASS texts (rule must NOT fire) and FAIL texts (rule MUST fire) per rule.
+# Keyed by the rule's `name` in config/rules.yaml. Used by tests/test_checker.py.
+
+no_done_when:
+  pass:
+    - "Fix the login bug in auth.py. Done when the tests in tests/test_auth.py pass."
+    - "Add a retry to client.py. It should pass the existing tests."
+    - "Acceptance: the export button in report.js downloads a CSV."
+  fail:
+    - "Please refactor the settings page in settings.py to be cleaner."
+
+no_target:
+  pass:
+    - "Rename the helper in src/utils/strings.py"
+    - "Look at https://example.com/docs and summarize it"
+    - "Make `parse_config` safer"
+    - "Check main.py for dead code"
+    - "Call parse() with an empty string"
+  fail:
+    - "Make the app load faster, e.g. on startup"
+    - "Write something nice"
+
+too_short:
+  pass:
+    - "Please rewrite the parse function in config.py so that it raises a clear error when the file is missing or empty"
+  fail:
+    - "fix the bug"
+    - ""
+
+vague_verb:
+  pass:
+    - "Fix the null check in auth.py"
+    - "Clean up src/auth.py by removing dead code"
+    - "Clean up the code in src/auth.py"
+    - "Improve the error message in cli.py"
+  fail:
+    - "fix it"
+    - "Please make it better"
+    - "clean up this code and make it better"
+    - "Improve this"
+    - "make this better"
+
+no_dont:
+  pass:
+    - "Update parse.py. Don't change the public API."
+    - "Update parse.py. Don’t change the public API."
+    - "Avoid adding new dependencies."
+    - "Never touch the tests."
+    - "Do not rename any functions."
+  fail:
+    - "Update parse.py to handle empty input."
+
+multi_task:
+  pass:
+    - "Fix the bug in a.py"
+    - "1. Fix the bug in a.py"
+  fail:
+    - "Fix the bug in a.py and also add a new endpoint"
+    - "Fix the login bug, also add a dark mode toggle"
+    - "1. Fix the login bug\n2. Add a dark mode toggle\n3. Update the README"
+
+no_output_format:
+  pass:
+    - "Return a unified diff of the change"
+    - "Give me the answer as a bullet list"
+  fail:
+    - "Rename the variable x in a.py"
+
+no_context:
+  pass:
+    - "Rename x because the linter flags it"
+    - "I am migrating to Python 3.13, so rename x"
+  fail:
+    - "Rename x in a.py"
